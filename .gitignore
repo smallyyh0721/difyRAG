@@ -21,6 +21,9 @@ venv/
 *.swp
 *.swo
 
+# Dify clone (created by deploy script)
+dify-docker/
+
 # OS
 .DS_Store
 Thumbs.db
