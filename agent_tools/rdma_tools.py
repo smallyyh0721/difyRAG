@@ -5,6 +5,7 @@ Run this as a Flask service alongside your Dify deployment.
 """
 
 import json
+import os
 import subprocess
 import logging
 from datetime import datetime
@@ -337,8 +338,10 @@ def send_alarm():
     logger.warning(f"ALARM [{severity}]: {summary}")
 
     # Write to alarm log file
+    log_dir = os.environ.get("RDMA_LOG_DIR", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs"))
+    os.makedirs(log_dir, exist_ok=True)
     try:
-        with open("/var/log/rdma_collector/alarms.json", "a") as f:
+        with open(os.path.join(log_dir, "alarms.json"), "a") as f:
             f.write(json.dumps(alarm_record) + "\n")
     except Exception as e:
         logger.error(f"Failed to write alarm log: {e}")

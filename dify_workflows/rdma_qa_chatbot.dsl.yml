@@ -1,0 +1,382 @@
+app:
+  description: >-
+    RDMA Knowledge Assistant. Answers user questions about RDMA networking
+    using RAG knowledge base. For non-RDMA questions, answers directly.
+  icon: "\U0001F4AC"
+  icon_background: '#D5F5F6'
+  mode: advanced-chat
+  name: RDMA Knowledge Assistant
+  use_icon_as_answer_icon: false
+kind: app
+version: 0.5.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      enabled: false
+    opening_statement: >-
+      Hello! I'm the RDMA Knowledge Assistant. I can help you with:
+
+      - RDMA concepts (InfiniBand, RoCE, iWARP)
+
+      - Troubleshooting RDMA issues
+
+      - Performance tuning
+
+      - Configuration guidance
+
+      - General networking questions
+
+
+      What would you like to know?
+    retriever_resource:
+      enabled: true
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions:
+    - How do I check if my RDMA port is active?
+    - What causes RNR retry exceeded errors?
+    - How do I configure PFC for RoCE?
+    - My ib_write_bw shows low bandwidth, how to debug?
+    suggested_questions_after_answer:
+      enabled: true
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    # Start -> Classify
+    - data:
+        sourceType: start
+        targetType: llm
+      id: start-source-classify-target
+      source: 'node_start'
+      sourceHandle: source
+      target: 'node_classify'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # Classify -> IF/ELSE
+    - data:
+        sourceType: llm
+        targetType: if-else
+      id: classify-source-ifelse-target
+      source: 'node_classify'
+      sourceHandle: source
+      target: 'node_ifelse_rdma'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # IF/ELSE (true=rdma) -> Knowledge Retrieval
+    - data:
+        sourceType: if-else
+        targetType: knowledge-retrieval
+      id: ifelse-true-rag-target
+      source: 'node_ifelse_rdma'
+      sourceHandle: 'true'
+      target: 'node_rag'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # IF/ELSE (false=general) -> Direct Answer LLM
+    - data:
+        sourceType: if-else
+        targetType: llm
+      id: ifelse-false-direct-target
+      source: 'node_ifelse_rdma'
+      sourceHandle: 'false'
+      target: 'node_direct_answer'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # Knowledge Retrieval -> RAG Answer LLM
+    - data:
+        sourceType: knowledge-retrieval
+        targetType: llm
+      id: rag-source-raganswer-target
+      source: 'node_rag'
+      sourceHandle: source
+      target: 'node_rag_answer'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # RAG Answer LLM -> Answer (RDMA)
+    - data:
+        sourceType: llm
+        targetType: answer
+      id: raganswer-source-answerrdma-target
+      source: 'node_rag_answer'
+      sourceHandle: source
+      target: 'node_answer_rdma'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # Direct Answer LLM -> Answer (General)
+    - data:
+        sourceType: llm
+        targetType: answer
+      id: direct-source-answergeneral-target
+      source: 'node_direct_answer'
+      sourceHandle: source
+      target: 'node_answer_general'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+
+    nodes:
+    # ===== START =====
+    - data:
+        desc: ''
+        title: Start
+        type: start
+        variables: []
+      height: 54
+      id: 'node_start'
+      position:
+        x: 30
+        y: 300
+      type: custom
+      width: 244
+
+    # ===== LLM: CLASSIFY QUESTION =====
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: 'Classifies whether the user question is RDMA-related'
+        memory:
+          query_prompt_template: '{{#sys.query#}}'
+          role_prefix:
+            assistant: ''
+            user: ''
+          window:
+            enabled: false
+            size: 50
+        model:
+          completion_params:
+            temperature: 0.1
+            max_tokens: 10
+          mode: chat
+          # >>> CHANGE THIS to your model <<<
+          name: PUT_YOUR_MODEL_NAME_HERE
+          provider: langgenius/openai_api_compatible/openai_api_compatible
+        prompt_template:
+        - role: system
+          text: >-
+            Classify the user question. Is it related to RDMA, InfiniBand,
+            RoCE, iWARP, high-performance networking, network adapters (HCA/NIC),
+            or Linux network troubleshooting?
+
+            Respond with ONLY one word: "rdma" or "general"
+        - role: user
+          text: '{{#sys.query#}}'
+        title: Classify Question
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 90
+      id: 'node_classify'
+      position:
+        x: 334
+        y: 300
+      type: custom
+      width: 244
+
+    # ===== IF/ELSE: RDMA RELATED? =====
+    - data:
+        cases:
+        - case_id: 'true'
+          conditions:
+          - comparison_operator: contains
+            id: cond_is_rdma
+            value: rdma
+            varType: string
+            variable_selector:
+            - node_classify
+            - text
+          id: 'true'
+          logical_operator: and
+        desc: 'Route to RAG path or direct answer path'
+        title: RDMA Related?
+        type: if-else
+      height: 126
+      id: 'node_ifelse_rdma'
+      position:
+        x: 638
+        y: 300
+      type: custom
+      width: 244
+
+    # ===== KNOWLEDGE RETRIEVAL =====
+    - data:
+        desc: 'Search RDMA knowledge base for relevant context'
+        # >>> After import, click this node and select your Knowledge Base <<<
+        dataset_ids: []
+        multiple_retrieval_config:
+          reranking_enable: true
+          reranking_mode: reranking_model
+          # >>> Select your rerank model after import <<<
+          reranking_model:
+            provider: ''
+            model: ''
+          top_k: 5
+          score_threshold: 0.5
+          score_threshold_enabled: true
+        query_variable_selector:
+        - sys
+        - query
+        retrieval_mode: multiple
+        single_retrieval_config:
+          model:
+            provider: ''
+            name: ''
+            mode: chat
+            completion_params:
+              temperature: 0.7
+        title: Search RDMA Knowledge Base
+        type: knowledge-retrieval
+      height: 90
+      id: 'node_rag'
+      position:
+        x: 942
+        y: 220
+      type: custom
+      width: 244
+
+    # ===== LLM: RAG ANSWER =====
+    - data:
+        context:
+          enabled: true
+          variable_selector:
+          - node_rag
+          - result
+        desc: 'Answer RDMA question using knowledge base context'
+        memory:
+          query_prompt_template: '{{#sys.query#}}'
+          role_prefix:
+            assistant: ''
+            user: ''
+          window:
+            enabled: true
+            size: 10
+        model:
+          completion_params:
+            temperature: 0.3
+          mode: chat
+          # >>> CHANGE THIS to your model <<<
+          name: PUT_YOUR_MODEL_NAME_HERE
+          provider: langgenius/openai_api_compatible/openai_api_compatible
+        prompt_template:
+        - role: system
+          text: >-
+            You are an expert RDMA networking assistant.
+            Answer the user's question using the provided knowledge base context.
+            If the knowledge base does not contain relevant information,
+            use your general knowledge but clearly state that.
+
+            Always provide practical commands and configuration examples when relevant.
+            When providing troubleshooting steps, start with the simplest checks first,
+            include exact commands, and explain expected output.
+        - role: user
+          text: >-
+            ## Knowledge Base Context
+
+            {{#context#}}
+
+
+            ## User Question
+
+            {{#sys.query#}}
+        title: Answer with Knowledge Base
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 98
+      id: 'node_rag_answer'
+      position:
+        x: 1246
+        y: 220
+      type: custom
+      width: 244
+
+    # ===== LLM: DIRECT ANSWER =====
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: 'Answer non-RDMA questions directly'
+        memory:
+          query_prompt_template: '{{#sys.query#}}'
+          role_prefix:
+            assistant: ''
+            user: ''
+          window:
+            enabled: true
+            size: 10
+        model:
+          completion_params:
+            temperature: 0.7
+          mode: chat
+          # >>> CHANGE THIS to your model <<<
+          name: PUT_YOUR_MODEL_NAME_HERE
+          provider: langgenius/openai_api_compatible/openai_api_compatible
+        prompt_template:
+        - role: system
+          text: >-
+            You are a helpful assistant. Answer the user's general question.
+            This question is not about RDMA networking.
+        - role: user
+          text: '{{#sys.query#}}'
+        title: Direct Answer
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 98
+      id: 'node_direct_answer'
+      position:
+        x: 942
+        y: 430
+      type: custom
+      width: 244
+
+    # ===== ANSWER: RDMA =====
+    - data:
+        answer: '{{#node_rag_answer.text#}}'
+        desc: ''
+        title: Answer (RDMA)
+        type: answer
+        variables: []
+      height: 105
+      id: 'node_answer_rdma'
+      position:
+        x: 1550
+        y: 220
+      type: custom
+      width: 244
+
+    # ===== ANSWER: GENERAL =====
+    - data:
+        answer: '{{#node_direct_answer.text#}}'
+        desc: ''
+        title: Answer (General)
+        type: answer
+        variables: []
+      height: 105
+      id: 'node_answer_general'
+      position:
+        x: 1246
+        y: 430
+      type: custom
+      width: 244
+
+    viewport:
+      x: 0
+      y: 0
+      zoom: 0.7

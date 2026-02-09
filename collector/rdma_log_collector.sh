@@ -5,7 +5,9 @@
 
 set -euo pipefail
 
-OUTPUT_DIR="${RDMA_LOG_DIR:-/var/log/rdma_collector}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+OUTPUT_DIR="${RDMA_LOG_DIR:-${PROJECT_DIR}/logs}"
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 OUTPUT_FILE="${OUTPUT_DIR}/rdma_snapshot_$(date +%Y%m%d_%H%M%S).json"
 

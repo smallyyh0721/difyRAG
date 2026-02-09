@@ -13,6 +13,7 @@ venv/
 
 # Logs
 *.log
+logs/
 /var/log/rdma_collector/
 
 # IDE

@@ -9,4 +9,6 @@ DIFY_API_KEY=your-dify-workflow-api-key
 CHECK_INTERVAL=60
 
 # Directory for log files
-RDMA_LOG_DIR=/var/log/rdma_collector
+# Default: <project_root>/logs (no sudo needed)
+# Uncomment to override:
+# RDMA_LOG_DIR=/var/log/rdma_collector

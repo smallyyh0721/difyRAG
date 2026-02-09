@@ -1,0 +1,617 @@
+app:
+  description: >-
+    Automatically monitors RDMA subsystem health, analyzes issues using LLM + RAG,
+    generates action plans, and executes fixes via agent tools.
+    Escalates to human when automated fixes are insufficient.
+  icon: "\U0001F527"
+  icon_background: '#E4FBCC'
+  mode: workflow
+  name: RDMA Auto-Monitor & Action Agent
+  use_icon_as_answer_icon: false
+kind: app
+version: 0.5.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      enabled: false
+    opening_statement: ''
+    retriever_resource:
+      enabled: true
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    # Start -> Analyze
+    - data:
+        sourceType: start
+        targetType: llm
+      id: start-source-analyze-target
+      source: 'node_start'
+      sourceHandle: source
+      target: 'node_analyze'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # Analyze -> IF/ELSE Issues?
+    - data:
+        sourceType: llm
+        targetType: if-else
+      id: analyze-source-ifelse1-target
+      source: 'node_analyze'
+      sourceHandle: source
+      target: 'node_ifelse_issues'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # IF/ELSE Issues? (true) -> Knowledge Retrieval
+    - data:
+        sourceType: if-else
+        targetType: knowledge-retrieval
+      id: ifelse1-true-rag-target
+      source: 'node_ifelse_issues'
+      sourceHandle: 'true'
+      target: 'node_rag'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # IF/ELSE Issues? (false) -> End Healthy
+    - data:
+        sourceType: if-else
+        targetType: end
+      id: ifelse1-false-endhealthy-target
+      source: 'node_ifelse_issues'
+      sourceHandle: 'false'
+      target: 'node_end_healthy'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # Knowledge Retrieval -> Generate Action Plan
+    - data:
+        sourceType: knowledge-retrieval
+        targetType: llm
+      id: rag-source-actionplan-target
+      source: 'node_rag'
+      sourceHandle: source
+      target: 'node_action_plan'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # Generate Action Plan -> HTTP Execute
+    - data:
+        sourceType: llm
+        targetType: http-request
+      id: actionplan-source-http-target
+      source: 'node_action_plan'
+      sourceHandle: source
+      target: 'node_http_execute'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # HTTP Execute -> Verify Fix
+    - data:
+        sourceType: http-request
+        targetType: llm
+      id: http-source-verify-target
+      source: 'node_http_execute'
+      sourceHandle: source
+      target: 'node_verify'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # Verify Fix -> IF/ELSE Escalation?
+    - data:
+        sourceType: llm
+        targetType: if-else
+      id: verify-source-ifelse2-target
+      source: 'node_verify'
+      sourceHandle: source
+      target: 'node_ifelse_escalate'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # IF/ELSE Escalation? (true) -> HTTP Alarm
+    - data:
+        sourceType: if-else
+        targetType: http-request
+      id: ifelse2-true-alarm-target
+      source: 'node_ifelse_escalate'
+      sourceHandle: 'true'
+      target: 'node_http_alarm'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # IF/ELSE Escalation? (false) -> End Fixed
+    - data:
+        sourceType: if-else
+        targetType: end
+      id: ifelse2-false-endfixed-target
+      source: 'node_ifelse_escalate'
+      sourceHandle: 'false'
+      target: 'node_end_fixed'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # HTTP Alarm -> End Escalated
+    - data:
+        sourceType: http-request
+        targetType: end
+      id: alarm-source-endescalated-target
+      source: 'node_http_alarm'
+      sourceHandle: source
+      target: 'node_end_escalated'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+
+    nodes:
+    # ===== START NODE =====
+    - data:
+        desc: 'Receives RDMA snapshot data and health status from the monitor daemon'
+        title: Start
+        type: start
+        variables:
+        - label: RDMA Snapshot
+          max_length: null
+          options: []
+          required: true
+          type: paragraph
+          variable: rdma_snapshot
+        - label: Health Status
+          max_length: null
+          options: []
+          required: true
+          type: text-input
+          variable: health_status
+        - label: Mode
+          max_length: null
+          options: []
+          required: false
+          type: text-input
+          variable: mode
+      height: 116
+      id: 'node_start'
+      position:
+        x: 30
+        y: 300
+      type: custom
+      width: 244
+
+    # ===== LLM: ANALYZE SNAPSHOT =====
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: 'LLM analyzes the RDMA snapshot and identifies issues'
+        model:
+          completion_params:
+            temperature: 0.3
+          mode: chat
+          # >>> CHANGE THIS to your model <<<
+          name: PUT_YOUR_MODEL_NAME_HERE
+          provider: langgenius/openai_api_compatible/openai_api_compatible
+        prompt_template:
+        - role: system
+          text: >-
+            You are an RDMA networking expert. Analyze the following RDMA system snapshot
+            and identify any issues, errors, or anomalies.
+        - role: user
+          text: >-
+            Health Status: {{#node_start.health_status#}}
+
+
+            Full System Snapshot:
+
+            {{#node_start.rdma_snapshot#}}
+
+
+            Provide your analysis in this JSON format:
+
+            {
+              "has_issues": true/false,
+              "severity": "critical/warning/info",
+              "issues": [
+                {
+                  "category": "link|performance|connection|memory|driver|config",
+                  "description": "Brief description of the issue",
+                  "evidence": "Specific data from the snapshot that shows this issue",
+                  "keywords": "search keywords for RAG lookup"
+                }
+              ],
+              "summary": "One-paragraph summary of the RDMA subsystem state"
+            }
+
+            If no issues are found, set has_issues to false and leave issues array empty.
+        title: Analyze RDMA Snapshot
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 98
+      id: 'node_analyze'
+      position:
+        x: 334
+        y: 300
+      type: custom
+      width: 244
+
+    # ===== IF/ELSE: ISSUES FOUND? =====
+    - data:
+        cases:
+        - case_id: 'true'
+          conditions:
+          - comparison_operator: contains
+            id: cond_issues_found
+            value: '"has_issues": true'
+            varType: string
+            variable_selector:
+            - node_analyze
+            - text
+          id: 'true'
+          logical_operator: and
+        desc: 'Check if LLM analysis found any issues'
+        title: Issues Found?
+        type: if-else
+      height: 126
+      id: 'node_ifelse_issues'
+      position:
+        x: 638
+        y: 300
+      type: custom
+      width: 244
+
+    # ===== KNOWLEDGE RETRIEVAL =====
+    - data:
+        desc: 'Query RDMA knowledge base for troubleshooting information'
+        # >>> After import, click this node and select your Knowledge Base <<<
+        dataset_ids: []
+        multiple_retrieval_config:
+          reranking_enable: true
+          reranking_mode: reranking_model
+          # >>> Select your rerank model after import <<<
+          reranking_model:
+            provider: ''
+            model: ''
+          top_k: 5
+          score_threshold: 0.5
+          score_threshold_enabled: true
+        query_variable_selector:
+        - node_analyze
+        - text
+        retrieval_mode: multiple
+        single_retrieval_config:
+          model:
+            provider: ''
+            name: ''
+            mode: chat
+            completion_params:
+              temperature: 0.7
+        title: Query RDMA Knowledge Base
+        type: knowledge-retrieval
+      height: 90
+      id: 'node_rag'
+      position:
+        x: 942
+        y: 220
+      type: custom
+      width: 244
+
+    # ===== LLM: GENERATE ACTION PLAN =====
+    - data:
+        context:
+          enabled: true
+          variable_selector:
+          - node_rag
+          - result
+        desc: 'Generate a structured action plan based on analysis + RAG context'
+        model:
+          completion_params:
+            temperature: 0.3
+          mode: chat
+          # >>> CHANGE THIS to your model <<<
+          name: PUT_YOUR_MODEL_NAME_HERE
+          provider: langgenius/openai_api_compatible/openai_api_compatible
+        prompt_template:
+        - role: system
+          text: >-
+            You are an RDMA troubleshooting expert. Based on the issue analysis and
+            relevant knowledge base information, generate a concrete action plan.
+        - role: user
+          text: >-
+            ## Issue Analysis
+
+            {{#node_analyze.text#}}
+
+
+            ## Relevant Knowledge Base Information
+
+            {{#context#}}
+
+
+            ## Available Agent Tools
+
+            You have access to these tools for executing fixes:
+
+            - rdma_check_status: Check RDMA device status
+
+            - rdma_check_counters: Read error counters
+
+            - rdma_reset_port: Reset an RDMA port
+
+            - rdma_reload_driver: Reload RDMA kernel modules
+
+            - rdma_configure_qos: Configure RoCE QoS (PFC/ECN)
+
+            - rdma_set_memlock: Set memory lock limits
+
+            - rdma_run_perftest: Run RDMA performance test
+
+            - rdma_check_pcie: Check PCIe configuration
+
+            - send_alarm: Send alarm to human operator
+
+
+            Generate an action plan as a JSON object:
+
+            {
+              "plan": [
+                {
+                  "step": 1,
+                  "tool": "tool_name",
+                  "parameters": {"param1": "value1"},
+                  "description": "What this step does",
+                  "expected_outcome": "What success looks like",
+                  "on_failure": "What to do if this step fails"
+                }
+              ],
+              "max_retries": 3,
+              "escalation_message": "Message to send to human if all steps fail"
+            }
+
+            Return ONLY the JSON, no extra text.
+        title: Generate Action Plan
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 98
+      id: 'node_action_plan'
+      position:
+        x: 1246
+        y: 220
+      type: custom
+      width: 244
+
+    # ===== HTTP REQUEST: EXECUTE ACTION PLAN =====
+    - data:
+        desc: 'Send action plan to agent tools API for execution'
+        title: Execute Action Plan
+        type: http-request
+        method: post
+        # >>> CHANGE THIS to your agent tools server IP <<<
+        url: http://YOUR_SERVER_IP:5100/tools/rdma_action_executor
+        headers: 'Content-Type: application/json'
+        params: ''
+        body:
+          type: json
+          data:
+          - key: action_plan
+            type: text
+            value: '{{#node_action_plan.text#}}'
+        authorization:
+          type: no-auth
+        timeout:
+          connect: 10
+          read: 120
+          write: 10
+        retry:
+          max_retries: 0
+      height: 90
+      id: 'node_http_execute'
+      position:
+        x: 1550
+        y: 220
+      type: custom
+      width: 244
+
+    # ===== LLM: VERIFY FIX =====
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: 'LLM verifies whether the fix was successful'
+        model:
+          completion_params:
+            temperature: 0.3
+          mode: chat
+          # >>> CHANGE THIS to your model <<<
+          name: PUT_YOUR_MODEL_NAME_HERE
+          provider: langgenius/openai_api_compatible/openai_api_compatible
+        prompt_template:
+        - role: system
+          text: >-
+            You are an RDMA troubleshooting expert. Review the automated fix results.
+        - role: user
+          text: >-
+            The automated RDMA fix has been executed. Review the results:
+
+
+            Original Issues:
+
+            {{#node_analyze.text#}}
+
+
+            Action Plan:
+
+            {{#node_action_plan.text#}}
+
+
+            Execution Results:
+
+            {{#node_http_execute.body#}}
+
+
+            Determine:
+
+            1. Was the fix successful?
+
+            2. Are there remaining issues?
+
+            3. Should we escalate to a human operator?
+
+
+            Respond in JSON:
+
+            {
+              "fix_successful": true/false,
+              "remaining_issues": "description or null",
+              "needs_escalation": true/false,
+              "escalation_reason": "reason or null",
+              "summary": "Brief summary of what was done and the outcome"
+            }
+
+            Return ONLY the JSON, no extra text.
+        title: Verify Fix Result
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 98
+      id: 'node_verify'
+      position:
+        x: 1854
+        y: 220
+      type: custom
+      width: 244
+
+    # ===== IF/ELSE: NEEDS ESCALATION? =====
+    - data:
+        cases:
+        - case_id: 'true'
+          conditions:
+          - comparison_operator: contains
+            id: cond_needs_escalation
+            value: '"needs_escalation": true'
+            varType: string
+            variable_selector:
+            - node_verify
+            - text
+          id: 'true'
+          logical_operator: and
+        desc: 'Check if human escalation is needed'
+        title: Needs Escalation?
+        type: if-else
+      height: 126
+      id: 'node_ifelse_escalate'
+      position:
+        x: 2158
+        y: 220
+      type: custom
+      width: 244
+
+    # ===== HTTP REQUEST: SEND ALARM =====
+    - data:
+        desc: 'Alert human operators about unresolved RDMA issues'
+        title: Send Alarm
+        type: http-request
+        method: post
+        # >>> CHANGE THIS to your agent tools server IP <<<
+        url: http://YOUR_SERVER_IP:5100/tools/send_alarm
+        headers: 'Content-Type: application/json'
+        params: ''
+        body:
+          type: json
+          data:
+          - key: severity
+            type: text
+            value: critical
+          - key: summary
+            type: text
+            value: '{{#node_verify.text#}}'
+          - key: details
+            type: text
+            value: '{{#node_analyze.text#}}'
+        authorization:
+          type: no-auth
+        timeout:
+          connect: 10
+          read: 60
+          write: 10
+        retry:
+          max_retries: 0
+      height: 90
+      id: 'node_http_alarm'
+      position:
+        x: 2462
+        y: 140
+      type: custom
+      width: 244
+
+    # ===== END: HEALTHY =====
+    - data:
+        desc: 'No issues detected'
+        outputs:
+        - value_selector:
+          - node_analyze
+          - text
+          variable: result
+        title: End - Healthy
+        type: end
+      height: 90
+      id: 'node_end_healthy'
+      position:
+        x: 942
+        y: 430
+      type: custom
+      width: 244
+
+    # ===== END: FIXED =====
+    - data:
+        desc: 'Issues were fixed automatically'
+        outputs:
+        - value_selector:
+          - node_verify
+          - text
+          variable: result
+        title: End - Fixed
+        type: end
+      height: 90
+      id: 'node_end_fixed'
+      position:
+        x: 2462
+        y: 340
+      type: custom
+      width: 244
+
+    # ===== END: ESCALATED =====
+    - data:
+        desc: 'Issues escalated to human operator'
+        outputs:
+        - value_selector:
+          - node_http_alarm
+          - body
+          variable: result
+        title: End - Escalated
+        type: end
+      height: 90
+      id: 'node_end_escalated'
+      position:
+        x: 2766
+        y: 140
+      type: custom
+      width: 244
+
+    viewport:
+      x: 0
+      y: 0
+      zoom: 0.7

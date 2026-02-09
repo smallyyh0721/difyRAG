@@ -12,7 +12,8 @@ CONFIG_FILE="${SCRIPT_DIR}/../config/monitor.conf"
 DIFY_API_URL="${DIFY_API_URL:-http://localhost/v1/workflows/run}"
 DIFY_API_KEY="${DIFY_API_KEY:-}"
 CHECK_INTERVAL="${CHECK_INTERVAL:-60}"  # seconds
-LOG_DIR="${RDMA_LOG_DIR:-/var/log/rdma_collector}"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+LOG_DIR="${RDMA_LOG_DIR:-${PROJECT_DIR}/logs}"
 MONITOR_LOG="${LOG_DIR}/monitor.log"
 
 # Load config if exists
