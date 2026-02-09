@@ -1,0 +1,246 @@
+# Dify Workflow: RDMA Auto-Monitor & Action
+# Import this into Dify as a Workflow-type application.
+#
+# Workflow flow:
+#   1. Receive RDMA snapshot (from monitor daemon or manual trigger)
+#   2. LLM analyzes the snapshot to identify issues
+#   3. If issues found → query RAG knowledge base for solutions
+#   4. LLM generates action plan based on RAG results
+#   5. Agent executes action plan via tool calls
+#   6. If agent cannot fix → send alarm to human
+#
+# This YAML describes the workflow design for manual import into Dify UI.
+# Dify does not yet support full YAML import of workflows - use this as
+# a blueprint and create the workflow in the Dify UI.
+
+app:
+  name: "RDMA Auto-Monitor & Action Agent"
+  type: workflow
+  description: >
+    Automatically monitors RDMA subsystem health, analyzes issues using LLM + RAG,
+    generates action plans, and executes fixes via agent tools.
+    Escalates to human when automated fixes are insufficient.
+
+variables:
+  - name: rdma_snapshot
+    type: string
+    description: "JSON snapshot from rdma_log_collector.sh"
+    required: true
+  - name: health_status
+    type: string
+    description: "Health check result (HEALTHY or issue descriptions)"
+    required: true
+  - name: mode
+    type: string
+    description: "auto_monitor or manual_trigger"
+    default: "auto_monitor"
+
+nodes:
+  # --- Node 1: Start ---
+  - id: start
+    type: start
+    outputs:
+      - rdma_snapshot
+      - health_status
+      - mode
+
+  # --- Node 2: Issue Analysis (LLM) ---
+  - id: analyze_issues
+    type: llm
+    title: "Analyze RDMA Snapshot"
+    model: "local-llm"  # Configure to your local LLM
+    prompt: |
+      You are an RDMA networking expert. Analyze the following RDMA system snapshot
+      and identify any issues, errors, or anomalies.
+
+      Health Status: {{health_status}}
+
+      Full System Snapshot:
+      {{rdma_snapshot}}
+
+      Provide your analysis in this JSON format:
+      {
+        "has_issues": true/false,
+        "severity": "critical/warning/info",
+        "issues": [
+          {
+            "category": "link|performance|connection|memory|driver|config",
+            "description": "Brief description of the issue",
+            "evidence": "Specific data from the snapshot that shows this issue",
+            "keywords": "search keywords for RAG lookup"
+          }
+        ],
+        "summary": "One-paragraph summary of the RDMA subsystem state"
+      }
+
+      If no issues are found, set has_issues to false and leave issues array empty.
+    inputs:
+      rdma_snapshot: "{{start.rdma_snapshot}}"
+      health_status: "{{start.health_status}}"
+    outputs:
+      - analysis_result
+
+  # --- Node 3: Condition - Issues Found? ---
+  - id: check_issues
+    type: if_else
+    title: "Issues Found?"
+    conditions:
+      - variable: "{{analyze_issues.analysis_result}}"
+        operator: contains
+        value: '"has_issues": true'
+    true_branch: query_rag
+    false_branch: end_healthy
+
+  # --- Node 4: RAG Knowledge Base Query ---
+  - id: query_rag
+    type: knowledge_retrieval
+    title: "Query RDMA Knowledge Base"
+    dataset_ids:
+      - "{{rdma_knowledge_base_id}}"  # Set after creating dataset in Dify
+    query: "{{analyze_issues.analysis_result.issues[0].keywords}}"
+    retrieval_mode: semantic_search
+    top_k: 5
+    score_threshold: 0.5
+    reranking:
+      enabled: true
+      model: "rerank-model"  # Configure to your rerank model
+      top_n: 3
+    outputs:
+      - rag_results
+
+  # --- Node 5: Generate Action Plan (LLM + RAG context) ---
+  - id: generate_action_plan
+    type: llm
+    title: "Generate Action Plan"
+    model: "local-llm"
+    prompt: |
+      You are an RDMA troubleshooting expert. Based on the issue analysis and
+      relevant knowledge base information, generate a concrete action plan.
+
+      ## Issue Analysis
+      {{analyze_issues.analysis_result}}
+
+      ## Relevant Knowledge Base Information
+      {{query_rag.rag_results}}
+
+      ## Available Agent Tools
+      You have access to these tools for executing fixes:
+      - rdma_check_status: Check RDMA device status
+      - rdma_check_counters: Read error counters
+      - rdma_reset_port: Reset an RDMA port
+      - rdma_reload_driver: Reload RDMA kernel modules
+      - rdma_configure_qos: Configure RoCE QoS (PFC/ECN)
+      - rdma_set_memlock: Set memory lock limits
+      - rdma_run_perftest: Run RDMA performance test
+      - rdma_check_pcie: Check PCIe configuration
+      - send_alarm: Send alarm to human operator
+
+      Generate an action plan as a JSON array of steps:
+      {
+        "plan": [
+          {
+            "step": 1,
+            "tool": "tool_name",
+            "parameters": {"param1": "value1"},
+            "description": "What this step does",
+            "expected_outcome": "What success looks like",
+            "on_failure": "What to do if this step fails"
+          }
+        ],
+        "max_retries": 3,
+        "escalation_message": "Message to send to human if all steps fail"
+      }
+    inputs:
+      analysis: "{{analyze_issues.analysis_result}}"
+      rag_context: "{{query_rag.rag_results}}"
+    outputs:
+      - action_plan
+
+  # --- Node 6: Execute Action Plan (Agent) ---
+  - id: execute_actions
+    type: tool
+    title: "Execute Action Plan"
+    # This node calls the agent tools based on the action plan.
+    # In Dify, configure this as a Code node that parses the plan
+    # and calls tools iteratively, or use an Agent node.
+    tool_name: "rdma_action_executor"
+    parameters:
+      action_plan: "{{generate_action_plan.action_plan}}"
+    outputs:
+      - execution_result
+
+  # --- Node 7: Verify Fix ---
+  - id: verify_fix
+    type: llm
+    title: "Verify Fix Result"
+    model: "local-llm"
+    prompt: |
+      The automated RDMA fix has been executed. Review the results:
+
+      Original Issues:
+      {{analyze_issues.analysis_result}}
+
+      Action Plan:
+      {{generate_action_plan.action_plan}}
+
+      Execution Results:
+      {{execute_actions.execution_result}}
+
+      Determine:
+      1. Was the fix successful?
+      2. Are there remaining issues?
+      3. Should we escalate to a human operator?
+
+      Respond in JSON:
+      {
+        "fix_successful": true/false,
+        "remaining_issues": "description or null",
+        "needs_escalation": true/false,
+        "escalation_reason": "reason or null",
+        "summary": "Brief summary of what was done and the outcome"
+      }
+    outputs:
+      - verification_result
+
+  # --- Node 8: Condition - Needs Escalation? ---
+  - id: check_escalation
+    type: if_else
+    title: "Needs Human Escalation?"
+    conditions:
+      - variable: "{{verify_fix.verification_result}}"
+        operator: contains
+        value: '"needs_escalation": true'
+    true_branch: send_alarm
+    false_branch: end_fixed
+
+  # --- Node 9: Send Alarm ---
+  - id: send_alarm
+    type: tool
+    title: "Alert Human Operator"
+    tool_name: "send_alarm"
+    parameters:
+      severity: "{{analyze_issues.analysis_result.severity}}"
+      summary: "{{verify_fix.verification_result.summary}}"
+      original_issues: "{{analyze_issues.analysis_result}}"
+      actions_taken: "{{execute_actions.execution_result}}"
+    outputs:
+      - alarm_result
+
+  # --- End Nodes ---
+  - id: end_healthy
+    type: end
+    title: "End - System Healthy"
+    outputs:
+      answer: "RDMA system is healthy. No issues detected."
+
+  - id: end_fixed
+    type: end
+    title: "End - Issues Fixed"
+    outputs:
+      answer: "{{verify_fix.verification_result.summary}}"
+
+  - id: end_escalated
+    type: end
+    title: "End - Escalated to Human"
+    outputs:
+      answer: "Issues detected and escalated to human operator. {{send_alarm.alarm_result}}"

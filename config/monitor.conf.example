@@ -1,0 +1,12 @@
+# RDMA Monitor Daemon Configuration
+# Copy this to monitor.conf and fill in your values
+
+# Dify workflow API endpoint (the auto-monitor workflow)
+DIFY_API_URL=http://your-dify-host/v1/workflows/run
+DIFY_API_KEY=your-dify-workflow-api-key
+
+# How often to check RDMA health (seconds)
+CHECK_INTERVAL=60
+
+# Directory for log files
+RDMA_LOG_DIR=/var/log/rdma_collector

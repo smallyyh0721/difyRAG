@@ -1,0 +1,192 @@
+# Dify Workflow: RDMA Q&A Chatbot
+# Import this into Dify as a Chatbot-type application.
+#
+# Workflow flow:
+#   1. Receive user question
+#   2. LLM classifies if question is RDMA-related
+#   3a. If RDMA-related → query RAG → LLM answers with RAG context
+#   3b. If not RDMA-related → LLM answers directly
+#
+# This YAML describes the workflow design for manual creation in Dify UI.
+
+app:
+  name: "RDMA Knowledge Assistant"
+  type: chatbot
+  description: >
+    Answers user questions about RDMA networking.
+    Uses RAG knowledge base for RDMA-specific questions.
+    Answers general questions directly.
+
+# Opening statement shown when user starts a conversation
+opening_statement: |
+  Hello! I'm the RDMA Knowledge Assistant. I can help you with:
+  - RDMA concepts (InfiniBand, RoCE, iWARP)
+  - Troubleshooting RDMA issues
+  - Performance tuning
+  - Configuration guidance
+  - General networking questions
+
+  What would you like to know?
+
+suggested_questions:
+  - "How do I check if my RDMA port is active?"
+  - "What causes RNR retry exceeded errors?"
+  - "How do I configure PFC for RoCE?"
+  - "My ib_write_bw shows low bandwidth, how to debug?"
+
+# Model configuration
+model:
+  provider: "local-llm"  # Configure to your local LLM endpoint
+  name: "your-model-name"
+  completion_params:
+    temperature: 0.3
+    max_tokens: 2048
+
+# Pre-prompt (system prompt)
+pre_prompt: |
+  You are an expert RDMA (Remote Direct Memory Access) networking assistant.
+  Your primary role is to help users understand, configure, troubleshoot,
+  and optimize RDMA networking on Linux systems.
+
+  Guidelines:
+  1. For RDMA-related questions, use the provided knowledge base context
+     to give accurate, specific answers
+  2. For non-RDMA questions, answer directly from your general knowledge
+  3. Always provide practical commands and configuration examples when relevant
+  4. Clearly state when you're uncertain about something
+  5. If a question requires hands-on diagnosis, suggest specific commands
+     the user can run and offer to analyze the output
+
+  When providing troubleshooting steps:
+  - Start with the simplest checks first
+  - Include the exact commands to run
+  - Explain what the expected output should look like
+  - Suggest next steps based on possible outcomes
+
+# Dataset (knowledge base) configuration
+dataset:
+  ids:
+    - "{{rdma_knowledge_base_id}}"  # Set after creating dataset in Dify
+  retrieval_mode: semantic_search
+  top_k: 5
+  score_threshold: 0.5
+  reranking:
+    enabled: true
+    model: "rerank-model"  # Configure to your rerank model
+    top_n: 3
+
+# Agent mode configuration (for tool-calling capability)
+agent_mode:
+  enabled: true
+  tools:
+    - name: rdma_check_status
+      description: "Check RDMA device status on the monitored server"
+    - name: rdma_check_counters
+      description: "Read RDMA error and performance counters"
+    - name: rdma_run_perftest
+      description: "Run RDMA performance benchmark"
+    - name: rdma_check_pcie
+      description: "Check PCIe configuration for RDMA devices"
+
+# Workflow nodes for the Q&A pipeline
+nodes:
+  # --- Node 1: Start ---
+  - id: start
+    type: start
+    outputs:
+      - user_query
+
+  # --- Node 2: Classify Question ---
+  - id: classify_query
+    type: llm
+    title: "Classify User Question"
+    model: "local-llm"
+    prompt: |
+      Classify the following user question. Is it related to RDMA, InfiniBand,
+      RoCE, iWARP, high-performance networking, or network troubleshooting
+      on Linux servers?
+
+      User question: {{user_query}}
+
+      Respond with ONLY one word: "rdma" or "general"
+    inputs:
+      user_query: "{{start.user_query}}"
+    outputs:
+      - query_class
+
+  # --- Node 3: Route based on classification ---
+  - id: route_query
+    type: if_else
+    title: "RDMA Related?"
+    conditions:
+      - variable: "{{classify_query.query_class}}"
+        operator: contains
+        value: "rdma"
+    true_branch: rag_lookup
+    false_branch: direct_answer
+
+  # --- Node 4a: RAG Lookup ---
+  - id: rag_lookup
+    type: knowledge_retrieval
+    title: "Search RDMA Knowledge Base"
+    dataset_ids:
+      - "{{rdma_knowledge_base_id}}"
+    query: "{{start.user_query}}"
+    retrieval_mode: semantic_search
+    top_k: 5
+    score_threshold: 0.5
+    reranking:
+      enabled: true
+      model: "rerank-model"
+      top_n: 3
+    outputs:
+      - rag_results
+
+  # --- Node 5a: Answer with RAG context ---
+  - id: rag_answer
+    type: llm
+    title: "Answer with Knowledge Base"
+    model: "local-llm"
+    prompt: |
+      Answer the user's RDMA-related question using the provided knowledge base context.
+      If the knowledge base does not contain relevant information, use your general
+      knowledge but clearly state that.
+
+      ## Knowledge Base Context
+      {{rag_lookup.rag_results}}
+
+      ## User Question
+      {{start.user_query}}
+
+      Provide a clear, practical answer. Include relevant commands and configuration
+      examples when appropriate.
+    outputs:
+      - answer
+
+  # --- Node 4b: Direct Answer (non-RDMA) ---
+  - id: direct_answer
+    type: llm
+    title: "Direct Answer"
+    model: "local-llm"
+    prompt: |
+      Answer the following question directly. This is a general question not
+      specifically about RDMA networking.
+
+      Question: {{start.user_query}}
+
+      Provide a helpful and accurate answer.
+    outputs:
+      - answer
+
+  # --- End Nodes ---
+  - id: end_rag
+    type: end
+    title: "End - RAG Answer"
+    outputs:
+      answer: "{{rag_answer.answer}}"
+
+  - id: end_direct
+    type: end
+    title: "End - Direct Answer"
+    outputs:
+      answer: "{{direct_answer.answer}}"
