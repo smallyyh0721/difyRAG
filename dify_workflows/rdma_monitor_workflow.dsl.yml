@@ -198,7 +198,7 @@ workflow:
             temperature: 0.3
           mode: chat
           # >>> CHANGE THIS to your model <<<
-          name: PUT_YOUR_MODEL_NAME_HERE
+          name: Qwen3-32B-FP8
           provider: langgenius/openai_api_compatible/openai_api_compatible
         prompt_template:
         - role: system
@@ -319,7 +319,7 @@ workflow:
             temperature: 0.3
           mode: chat
           # >>> CHANGE THIS to your model <<<
-          name: PUT_YOUR_MODEL_NAME_HERE
+          name: Qwen3-32B-FP8
           provider: langgenius/openai_api_compatible/openai_api_compatible
         prompt_template:
         - role: system
@@ -399,7 +399,7 @@ workflow:
         type: http-request
         method: post
         # >>> CHANGE THIS to your agent tools server IP <<<
-        url: http://YOUR_SERVER_IP:5100/tools/rdma_action_executor
+        url: http://10.11.4.13:5100/tools/rdma_action_executor
         headers: 'Content-Type: application/json'
         params: ''
         body:
@@ -435,7 +435,7 @@ workflow:
             temperature: 0.3
           mode: chat
           # >>> CHANGE THIS to your model <<<
-          name: PUT_YOUR_MODEL_NAME_HERE
+          name: Qwen3-32B-FP8
           provider: langgenius/openai_api_compatible/openai_api_compatible
         prompt_template:
         - role: system
@@ -526,7 +526,7 @@ workflow:
         type: http-request
         method: post
         # >>> CHANGE THIS to your agent tools server IP <<<
-        url: http://YOUR_SERVER_IP:5100/tools/send_alarm
+        url: http://10.11.4.13:5100/tools/send_alarm
         headers: 'Content-Type: application/json'
         params: ''
         body:

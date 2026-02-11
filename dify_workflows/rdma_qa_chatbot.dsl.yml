@@ -162,7 +162,7 @@ workflow:
             max_tokens: 10
           mode: chat
           # >>> CHANGE THIS to your model <<<
-          name: PUT_YOUR_MODEL_NAME_HERE
+          name: Qwen3-32B-FP8
           provider: langgenius/openai_api_compatible/openai_api_compatible
         prompt_template:
         - role: system
@@ -269,7 +269,7 @@ workflow:
             temperature: 0.3
           mode: chat
           # >>> CHANGE THIS to your model <<<
-          name: PUT_YOUR_MODEL_NAME_HERE
+          name: Qwen3-32B-FP8
           provider: langgenius/openai_api_compatible/openai_api_compatible
         prompt_template:
         - role: system
@@ -324,7 +324,7 @@ workflow:
             temperature: 0.7
           mode: chat
           # >>> CHANGE THIS to your model <<<
-          name: PUT_YOUR_MODEL_NAME_HERE
+          name: Qwen3-32B-FP8
           provider: langgenius/openai_api_compatible/openai_api_compatible
         prompt_template:
         - role: system
